@@ -1,0 +1,4 @@
+[submodule "ManiSkill"]
+	path = ManiSkill
+	url = git@github.com:LiuYiKai6/ManiSkill.git
+	branch = mshab

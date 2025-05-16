@@ -229,3 +229,8 @@ class PickSubtaskTrainEnv(SubtaskTrainEnv):
         return self.compute_dense_reward(obs=obs, action=action, info=info) / max_reward
 
     # -------------------------------------------------------------------------------------------------
+
+
+@register_env("PickSubtaskTrain-v1", max_episode_steps=200)
+class CustomPickSubtaskTrainEnv(PickSubtaskTrainEnv):
+    pass

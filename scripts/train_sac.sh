@@ -1,4 +1,5 @@
 #!/usr/bin/bash
+timestamp=`date "+%Y%m%d_%H%M%S"`
 
 SEED=0
 
@@ -11,7 +12,7 @@ OBJ=003_cracker_box
 ENV_ID="$(echo $SUBTASK | sed 's/\b\(.\)/\u\1/g')SubtaskTrain-v0"
 WORKSPACE="mshab_exps"
 GROUP=$TASK-rcad-sac-$SUBTASK
-EXP_NAME="$ENV_ID/$GROUP/sac-$SUBTASK-$OBJ-local"
+EXP_NAME="$ENV_ID/$GROUP/sac-$SUBTASK-$OBJ-local-$timestamp"
 # shellcheck disable=SC2001
 PROJECT_NAME="MS-HAB-RCAD-$(echo $SUBTASK | sed 's/\b\(.\)/\u\1/g')-$TASK-sac"
 

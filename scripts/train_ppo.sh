@@ -1,17 +1,18 @@
 #!/usr/bin/bash
+timestamp=`date "+%Y%m%d_%H%M%S"`
 
 SEED=0
 
-TASK=set_table
-SUBTASK=open
+TASK=tidy_house
+SUBTASK=pick
 SPLIT=train
-OBJ=kitchen_counter
+OBJ=all
 
 # shellcheck disable=SC2001
 ENV_ID="$(echo $SUBTASK | sed 's/\b\(.\)/\u\1/g')SubtaskTrain-v0"
 WORKSPACE="mshab_exps"
 GROUP=$TASK-rcad-ppo-$SUBTASK
-EXP_NAME="$ENV_ID/$GROUP/ppo-$SUBTASK-$OBJ-local"
+EXP_NAME="$ENV_ID/$GROUP/ppo-$SUBTASK-$OBJ-local-$timestamp"
 # shellcheck disable=SC2001
 PROJECT_NAME="MS-HAB-RCAD-$(echo $SUBTASK | sed 's/\b\(.\)/\u\1/g')-$TASK-ppo"
 
