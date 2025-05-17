@@ -33,6 +33,13 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 
+localgrasp = [
+    "open3d>=0.18.0",
+    "numba",
+    "cupoch",
+    "scikit-image",
+    "pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git@stable",
+]
 train = ["omegaconf", "wandb", "tensorboard", "tensorboardX", "diffusers", "msgpack", "torchvision"]
 dev = ["ipdb", "jupyterlab", "ipython", "black", "isort"]
 

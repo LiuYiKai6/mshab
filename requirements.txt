@@ -1,0 +1,5 @@
+-e ./ManiSkill
+
+# for localgrasp
+-e ./localgrasp/pointnet2_ops_lib
+-e ./localgrasp/graspnetAPI
