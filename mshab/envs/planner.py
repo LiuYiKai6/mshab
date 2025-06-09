@@ -41,7 +41,7 @@ class Subtask:
     composite_subtask_uids: List[str] = field(init=False)
 
     def __post_init__(self):
-        assert self.type in ["pick", "place", "navigate", "open", "close"]
+        assert self.type in ["pick", "place", "navigate", "open", "close", "pick_and_place"]
         if getattr(self, "uid", None) is None:
             self.uid = self.type + "_" + shortuuid.ShortUUID().random(length=6)
         if getattr(self, "composite_subtask_uids", None) is None:
@@ -220,6 +220,66 @@ class CloseSubtaskConfig(SubtaskConfig):
 
 
 @dataclass
+class PickAndPlaceSubtask(Subtask):
+    obj_id: str
+    goal_rectangle_corners: Optional[
+        Union[List[str], RectCorners, List[RectCorners]]
+    ] = None
+    goal_pos: Optional[Union[PointTuple, List[PointTuple], str]] = None
+    validate_goal_rectangle_corners: bool = True
+    articulation_config: Optional[ArticulationConfig] = None
+        
+    def __post_init__(self):
+        self.type = "pick_and_place"
+        super().__post_init__()
+        if (
+            self.validate_goal_rectangle_corners
+            and self.goal_rectangle_corners is not None
+        ):
+            self.goal_rectangle_corners = self._parse_rect_corners(
+                self.goal_rectangle_corners
+            )
+
+        if isinstance(self.goal_pos, str):
+            self.goal_pos = [float(coord) for coord in self.goal_pos.split(",")]
+
+    def _parse_rect_corners(self, rect_corners):
+        for i, corner in enumerate(rect_corners):
+            if isinstance(corner, str):
+                rect_corners[i] = [float(coord) for coord in corner.split(",")]
+        # make sure have exactly 4 corners at the same height
+        assert len(rect_corners) == 4, "Goal rectangle must have exactly 4 corners"
+        A, B, C, D = [np.array(corner) for corner in rect_corners]
+        sides0 = np.array([B - A, C - B, D - C, A - D])
+        sides1 = np.array([D - A, A - B, B - C, C - D])
+        points_angles = np.rad2deg(
+            np.arccos(
+                np.sum(sides0 * sides1, axis=1)
+                / (np.linalg.norm(sides0, axis=1) * np.linalg.norm(sides1, axis=1))
+            )
+        )
+        assert np.all(
+            np.abs(points_angles - 90) < 1e-3
+        ), f"Should have points in ABCD order, but got angles {points_angles} between sides AB/AD, BC/BA, CD/CB, DA/DC"
+        return rect_corners
+
+
+@dataclass
+class PickAndPlaceSubtaskConfig(SubtaskConfig):
+    task_id: int = 5
+    obj_goal_thresh: float = 0.15
+    goal_type: str = "sphere"
+    robot_cumulative_force_limit: float = 12500
+
+    def __post_init__(self):
+        super().__post_init__()
+        assert self.obj_goal_thresh >= 0
+        # cylinder means cylindrical goal centered at place_subtask.goal_pos
+        # zone means use place_subtask.goal_rectangle_corners to establish rectangular zone
+        assert self.goal_type in ["zone", "cylinder", "sphere"]
+
+
+@dataclass
 class TaskPlan:
     subtasks: List[Subtask]
     build_config_name: Optional[str] = None
@@ -268,6 +328,8 @@ def plan_data_from_file(config_path: str = None) -> PlanData:
                 cls = OpenSubtask
             elif subtask_type == "close":
                 cls = CloseSubtask
+            elif subtask_type == "pick_and_place":
+                cls = PickAndPlaceSubtask
             else:
                 raise NotImplementedError(f"Subtask {subtask_type} not implemented yet")
             subtasks.append(from_dict(data_class=cls, data=subtask))

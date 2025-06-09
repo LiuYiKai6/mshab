@@ -2,10 +2,12 @@ from typing import Any, Dict, List
 
 import torch
 
+from mani_skill import ASSET_DIR
 from mani_skill.envs.utils import randomization
 from mani_skill.utils.geometry.rotation_conversions import quaternion_raw_multiply
 from mani_skill.utils.registration import register_env
 from mani_skill.utils.structs import Pose
+from mani_skill.utils.io_utils import load_json
 
 from mshab.envs.planner import PickSubtask, PickSubtaskConfig, TaskPlan
 from mshab.envs.subtask import SubtaskTrainEnv
@@ -233,4 +235,31 @@ class PickSubtaskTrainEnv(SubtaskTrainEnv):
 
 @register_env("PickSubtaskTrain-v1", max_episode_steps=200)
 class CustomPickSubtaskTrainEnv(PickSubtaskTrainEnv):
-    pass
+    def __init__(
+        self,
+        *args,
+        robot_uids="fetch",
+        task_plans: List[TaskPlan] = [],
+        **kwargs,
+    ):
+        super().__init__(*args, robot_uids=robot_uids, task_plans=task_plans, **kwargs)
+
+    # -------------------------------------------------------------------------------------------------
+    # INIT ROBOT SPAWN RANDOMIZATION
+    # -------------------------------------------------------------------------------------------------
+   
+    def _initialize_episode(self, env_idx, options):
+        with torch.device(self.device):
+            super()._initialize_episode(env_idx, options)
+            
+            obj_names = [
+                "_".join(obj.name.split("_")[1:])[:-2]
+                for obj in self.subtask_objs[0]._objs
+            ]
+            grasp_db = load_json(ASSET_DIR / "assets/mani_skill2_ycb/info_localgrasp_v3.json")
+            self.grasps: List[List[Dict]] = []
+            for obj_name in obj_names:
+                grasp: List[Dict] = grasp_db[obj_name]["grasp"]
+                
+                self.grasps.append(grasp)
+                

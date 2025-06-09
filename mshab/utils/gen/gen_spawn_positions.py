@@ -37,10 +37,12 @@ from mshab.envs.planner import (
     OpenSubtask,
     PickSubtask,
     PlaceSubtask,
+    PickAndPlaceSubtask,
     TaskPlan,
     plan_data_from_file,
 )
 
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 GOAL_POSE_Q = transforms3d.quaternions.axangle2quat(
     np.array([0, 1, 0]), theta=np.deg2rad(90)
@@ -503,6 +505,204 @@ def gen_place_spawn_data(
     return subtask_uid_to_spawn_data
 
 
+def gen_pick_and_place_spawn_data(
+    proc_num,
+    args: GenSpawnPositionArgs,
+    scene_builder_cls,
+    task_plans: List[TaskPlan],
+):
+    build_config_name = task_plans[0].build_config_name
+    env = make_env(scene_builder_cls)
+
+    scene_builder: ReplicaCADRearrangeSceneBuilder = env.scene_builder
+    build_config_names_to_idxs = scene_builder.build_config_names_to_idxs
+    init_config_names_to_idxs = scene_builder.init_config_names_to_idxs
+
+    subtask_uid_to_spawn_data = dict()
+
+    env.reset(
+        seed=args.seed + proc_num,
+        options=dict(
+            reconfigure=True,
+            build_config_idxs=build_config_names_to_idxs[build_config_name],
+        ),
+    )
+
+    agent_bodies = []
+    for link in env.agent.robot.links:
+        agent_bodies += link._bodies
+    agent_bodies = set(agent_bodies)
+    num_agent_contacts = lambda contacts: len(
+        [c for c in contacts if any([b in agent_bodies for b in c.bodies])]
+    )
+
+    for tp in tqdm(task_plans):
+        env.reset(
+            seed=args.seed + proc_num,
+            options=dict(
+                reconfigure=False,
+                init_config_idxs=init_config_names_to_idxs[tp.init_config_name],
+            ),
+        )
+
+        assert len(tp.subtasks) == 1 and isinstance(tp.subtasks[0], PickAndPlaceSubtask)
+        subtask: PickAndPlaceSubtask = tp.subtasks[0]
+
+        subtask_obj = scene_builder.movable_objects[f"env-0_{subtask.obj_id}"]
+
+        navigable_positions = torch.tensor(
+            scene_builder.navigable_positions[0].vertices
+        )
+
+        if subtask.articulation_config is not None:
+            subtask_articulation = scene_builder.articulations[
+                f"env-0_{subtask.articulation_config.articulation_id}"
+            ]
+            if subtask.articulation_config.articulation_type == "fridge":
+                min_open_qpos_frac = 0.75
+            elif subtask.articulation_config.articulation_type == "kitchen_counter":
+                min_open_qpos_frac = 0.9
+            else:
+                raise NotImplementedError(
+                    f"{subtask.articulation_config.articulation_type=} not supported"
+                )
+            spawn_articulation_qpos = []
+            spawn_obj_raw_pose = []
+
+        spawn_pos, spawn_qpos = [], []
+        while len(spawn_pos) < args.num_spawns_per_task_plan:
+            env.reset(
+                seed=args.seed + proc_num,
+                options=dict(
+                    reconfigure=False,
+                    init_config_idxs=init_config_names_to_idxs[tp.init_config_name],
+                ),
+            )
+
+            if subtask.articulation_config is not None:
+                if subtask.articulation_config.articulation_type == "kitchen_counter":
+                    subtask_obj_pose_wrt_container = (
+                        subtask_articulation.links[
+                            subtask.articulation_config.articulation_handle_link_idx
+                        ].pose.inv()
+                        * subtask_obj.pose
+                    )
+
+                robot_init_pos = env.agent.robot.pose.p
+                robot_init_pos[:, :2] = 99999
+                env.agent.robot.set_pose(Pose.create_from_pq(p=robot_init_pos))
+
+                new_subtask_articulation_qpos = subtask_articulation.qpos * 0
+                joint_qmax = subtask_articulation.qlimits[
+                    :,
+                    subtask.articulation_config.articulation_handle_active_joint_idx,
+                    1,
+                ]
+                joint_qmin = subtask_articulation.qlimits[
+                    :,
+                    subtask.articulation_config.articulation_handle_active_joint_idx,
+                    0,
+                ]
+                joint_qrange = joint_qmax - joint_qmin
+                joint_open_qmin = joint_qrange * min_open_qpos_frac + joint_qmin
+                rand_joint_qpos = (
+                    torch.rand_like(joint_qmax) * (joint_qmax - joint_open_qmin)
+                ) + joint_open_qmin
+                new_subtask_articulation_qpos[
+                    :, subtask.articulation_config.articulation_handle_active_joint_idx
+                ] = rand_joint_qpos
+                subtask_articulation.set_qpos(new_subtask_articulation_qpos)
+
+                if subtask.articulation_config.articulation_type == "kitchen_counter":
+                    subtask_obj.set_pose(
+                        subtask_articulation.links[
+                            subtask.articulation_config.articulation_handle_link_idx
+                        ].pose
+                        * subtask_obj_pose_wrt_container
+                    )
+
+            positions_wrt_centers = navigable_positions - subtask_obj.pose.p[0, :2]
+            dists = torch.norm(positions_wrt_centers, dim=-1)
+
+            new_navigable_positions = navigable_positions[dists < args.spawn_loc_radius]
+            positions_wrt_centers = positions_wrt_centers[dists < args.spawn_loc_radius]
+            dists = dists[dists < args.spawn_loc_radius]
+            rots = (
+                torch.sign(positions_wrt_centers[..., 1])
+                * torch.arccos(positions_wrt_centers[..., 0] / dists)
+                + torch.pi
+            ) % (2 * torch.pi)
+
+            # spawn to try
+            spawn_num = torch.randint(
+                low=0, high=len(new_navigable_positions), size=(1,)
+            )
+
+            # base pos
+            loc = new_navigable_positions[spawn_num]
+            robot_pos = env.agent.robot.pose.p
+            robot_pos[:, :2] = loc
+            robot_pos[:, :2] += torch.clamp(
+                torch.normal(0, 0.1, robot_pos[:, :2].shape), -0.2, 0.2
+            )
+            env.agent.robot.set_pose(Pose.create_from_pq(p=robot_pos))
+
+            # base rot
+            env.agent.robot.set_qpos(env.agent.keyframes["rest"].qpos)
+            qpos = env.agent.robot.get_qpos()
+            rot = rots[spawn_num]
+            qpos[:, 2] = rot
+            qpos[:, 2:3] += torch.clamp(
+                torch.normal(0, 0.25, qpos[:, 2:3].shape), -0.5, 0.5
+            )
+            # arm qpos
+            qpos[:, 5:6] += torch.clamp(
+                torch.normal(0, args.robot_init_qpos_noise / 2, qpos[:, 5:6].shape),
+                -args.robot_init_qpos_noise,
+                args.robot_init_qpos_noise,
+            )
+            qpos[:, 7:-2] += torch.clamp(
+                torch.normal(0, args.robot_init_qpos_noise / 2, qpos[:, 7:-2].shape),
+                -args.robot_init_qpos_noise,
+                args.robot_init_qpos_noise,
+            )
+            env.agent.reset(qpos)
+
+            robot_force = 0
+            total_agent_contacts = 0
+            for _ in range(args.init_check_scene_steps):
+                env.scene.step()
+
+                robot_force = robot_force + env.agent.robot.get_net_contact_forces(
+                    env.agent.robot_link_names
+                ).norm(dim=-1).sum(dim=-1)
+                total_agent_contacts += num_agent_contacts(env.scene.get_contacts())
+
+            if (
+                robot_force.item() == 0
+                and total_agent_contacts == args.init_check_scene_steps
+            ):
+                spawn_pos.append(env.agent.robot.pose.p[0])
+                spawn_qpos.append(env.agent.robot.qpos[0])
+                if subtask.articulation_config is not None:
+                    spawn_articulation_qpos.append(subtask_articulation.qpos[0])
+                    spawn_obj_raw_pose.append(subtask_obj.pose.raw_pose[0])
+
+        if subtask.articulation_config is not None:
+            subtask_uid_to_spawn_data[subtask.uid] = dict(
+                robot_pos=torch.stack(spawn_pos),
+                robot_qpos=torch.stack(spawn_qpos),
+                articulation_qpos=torch.stack(spawn_articulation_qpos),
+                obj_raw_pose=torch.stack(spawn_obj_raw_pose),
+            )
+        else:
+            subtask_uid_to_spawn_data[subtask.uid] = dict(
+                robot_pos=torch.stack(spawn_pos),
+                robot_qpos=torch.stack(spawn_qpos),
+            )
+
+    return subtask_uid_to_spawn_data
+
 def gen_open_spawn_data(
     proc_num,
     args: GenSpawnPositionArgs,
@@ -895,6 +1095,7 @@ def gen_spawn_data(
         return dict(
             pick=gen_pick_spawn_data,
             place=gen_place_spawn_data,
+            pick_and_place=gen_pick_and_place_spawn_data,
             open=gen_open_spawn_data,
             close=gen_close_spawn_data,
         )[args.subtask](proc_num, args, scene_builder_cls, task_plans)
