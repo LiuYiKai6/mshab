@@ -40,6 +40,7 @@ new_plans_dict: Dict[str, List[TaskPlan]] = dict(
     (obj_name, [])
     for obj_name in obj_names
 )
+num_subtask = 0
 for plan in plan_data.plans:
     subtasks = plan.subtasks
     build_config_name = plan.build_config_name
@@ -48,12 +49,14 @@ for plan in plan_data.plans:
         pick_subtask: PickSubtask = subtasks[i*4+1]
         place_subtask: PlaceSubtask = subtasks[i*4+3]
         pick_and_place_subtask = PickAndPlaceSubtask(
+            uid=f"{task}-pick_and_place-{split}-{num_subtask}-0",
             obj_id=pick_subtask.obj_id,
             goal_rectangle_corners=place_subtask.goal_rectangle_corners,
             goal_pos=place_subtask.goal_pos,
             validate_goal_rectangle_corners=place_subtask.validate_goal_rectangle_corners,
             articulation_config=pick_subtask.articulation_config,
         )
+        num_subtask += 1
         new_plan = TaskPlan(subtasks=[pick_and_place_subtask], build_config_name=build_config_name, init_config_name=init_config_name)
         new_plans_dict["all"].append(new_plan)
         for obj_name in obj_names:
