@@ -56,6 +56,7 @@ for plan in plan_data.plans:
             articulation_config=pick_subtask.articulation_config,
         )
         pick_and_place_subtask.uid=f"{task}-pick_and_place-{split}-{num_subtask}-0"
+        pick_and_place_subtask.composite_subtask_uids = [pick_and_place_subtask.uid]
         num_subtask += 1
         new_plan = TaskPlan(subtasks=[pick_and_place_subtask], build_config_name=build_config_name, init_config_name=init_config_name)
         new_plans_dict["all"].append(new_plan)
