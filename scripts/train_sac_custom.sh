@@ -20,7 +20,6 @@ fi
 SAPIEN_NO_DISPLAY=1 python -m mshab.train_sac configs/sac_pick_and_place.yml \
         seed=$SEED \
         env.env_id="$ENV_ID" \
-        env.num_envs=126 \
         env.task_plan_fp="$MS_ASSET_DIR/data/scene_datasets/replica_cad_dataset/rearrange/task_plans/$TASK/$SUBTASK/$SPLIT/$OBJ.json" \
         env.spawn_data_fp="$MS_ASSET_DIR/data/scene_datasets/replica_cad_dataset/rearrange/spawn_data/$TASK/$SUBTASK/$SPLIT/spawn_data.pt" \
         eval_env.task_plan_fp="$MS_ASSET_DIR/data/scene_datasets/replica_cad_dataset/rearrange/task_plans/$TASK/$SUBTASK/$SPLIT/$OBJ.json" \
@@ -28,3 +27,6 @@ SAPIEN_NO_DISPLAY=1 python -m mshab.train_sac configs/sac_pick_and_place.yml \
         eval_env.record_video="False" \
         eval_env.info_on_video="False" \
         logger.exp_name="$EXP_NAME" \
+        \
+        env.max_episode_steps=100 \
+        eval_env.max_episode_steps=200 \

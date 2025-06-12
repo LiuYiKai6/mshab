@@ -24,7 +24,7 @@ env:
     target_randomization: false
 eval_env:
   env_id: PickAndPlaceSubtaskTrain-v0
-  num_envs: 189
+  num_envs: 63
   max_episode_steps: 600
   make_env: true
   continuous_task: true
