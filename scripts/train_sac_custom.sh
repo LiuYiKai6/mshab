@@ -27,6 +27,3 @@ SAPIEN_NO_DISPLAY=1 python -m mshab.train_sac configs/sac_pick_and_place.yml \
         eval_env.record_video="False" \
         eval_env.info_on_video="False" \
         logger.exp_name="$EXP_NAME" \
-        \
-        env.max_episode_steps=100 \
-        eval_env.max_episode_steps=200 \
