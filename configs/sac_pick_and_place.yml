@@ -2,7 +2,7 @@ seed: 2337
 env:
   env_id: PickAndPlaceSubtaskTrain-v0
   num_envs: 63
-  max_episode_steps: 300
+  max_episode_steps: 200
   make_env: true
   continuous_task: true
   cat_state: true
@@ -25,7 +25,7 @@ env:
 eval_env:
   env_id: PickAndPlaceSubtaskTrain-v0
   num_envs: 63
-  max_episode_steps: 600
+  max_episode_steps: 400
   make_env: true
   continuous_task: true
   cat_state: true

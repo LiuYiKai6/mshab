@@ -31,7 +31,7 @@ from mshab.agents.dp import Agent as DPAgent
 from mshab.agents.ppo import Agent as PPOAgent
 from mshab.agents.sac import Agent as SACAgent
 from mshab.envs.make import EnvConfig, make_env
-from mshab.envs.planner import CloseSubtask, OpenSubtask, PickSubtask, PlaceSubtask
+from mshab.envs.planner import CloseSubtask, OpenSubtask, PickSubtask, PlaceSubtask, PickAndPlaceSubtask
 from mshab.envs.wrappers.record import RecordEpisode
 from mshab.utils.array import recursive_deepcopy, recursive_slice, to_tensor
 from mshab.utils.config import parse_cfg
@@ -105,6 +105,18 @@ POLICY_TYPE_TASK_SUBTASK_TO_TARG_IDS = dict(
                 "all",
             ],
             place=[
+                "002_master_chef_can",
+                "003_cracker_box",
+                "004_sugar_box",
+                "005_tomato_soup_can",
+                "007_tuna_fish_can",
+                "008_pudding_box",
+                "009_gelatin_box",
+                "010_potted_meat_can",
+                "024_bowl",
+                "all",
+            ],
+            pick_and_place=[
                 "002_master_chef_can",
                 "003_cracker_box",
                 "004_sugar_box",
@@ -335,11 +347,7 @@ def eval(cfg: EvalConfig):
 
     cfg_path = cfg.ckpt_dir + "/config.yml"
     ckpt_path = cfg.ckpt_dir + "/models/best_eval_return_per_step_ckpt.pt"
-    subtask_name = cfg.ckpt_dir.split("/")[-1].split("-")[1]
-
-    policies = dict()
-    policies[subtask_name] = dict()
-    policies[subtask_name]["all"] = get_policy_act_fn(cfg_path, ckpt_path)
+    policy = get_policy_act_fn(cfg_path, ckpt_path)
 
     def act(obs):
         with torch.no_grad():
@@ -844,6 +852,7 @@ def eval(cfg: EvalConfig):
                 place_env_idx = subtask_type == 1
                 open_env_idx = subtask_type == 3
                 close_env_idx = subtask_type == 4
+                pick_and_place_env_idx = subtask_type == 5
 
                 # get targ names to query per-obj policies
                 sapien_obj_names = [None] * uenv.num_envs
@@ -851,8 +860,8 @@ def eval(cfg: EvalConfig):
                     torch.clip(subtask_pointer, max=len(uenv.task_plan) - 1)
                 ):
                     subtask = uenv.task_plan[subtask_num]
-                    if isinstance(subtask, PickSubtask) or isinstance(
-                        subtask, PlaceSubtask
+                    if isinstance(subtask, PickSubtask) or isinstance(subtask, PlaceSubtask) or isinstance(
+                        subtask, PickAndPlaceSubtask
                     ):
                         sapien_obj_names[env_num] = (
                             uenv.subtask_objs[subtask_num]._objs[env_num].name
@@ -899,13 +908,9 @@ def eval(cfg: EvalConfig):
                         for tn, targ_env_idx in tn_env_idxs.items():
                             subtask_targ_env_idx = subtask_env_idx & targ_env_idx
                             if torch.any(subtask_targ_env_idx):
-                                action[subtask_targ_env_idx] = policies[subtask_name][
-                                    tn
-                                ](recursive_slice(obs, subtask_targ_env_idx))
+                                action[subtask_targ_env_idx] = policy(recursive_slice(obs, subtask_targ_env_idx))
                     else:
-                        action[subtask_env_idx] = policies[subtask_name]["all"](
-                            recursive_slice(obs, subtask_env_idx)
-                        )
+                        action[subtask_env_idx] = policy(recursive_slice(obs, subtask_env_idx))
 
                 if torch.any(pick_env_idx):
                     set_subtask_targ_policy_act("pick", pick_env_idx)
@@ -915,6 +920,8 @@ def eval(cfg: EvalConfig):
                     set_subtask_targ_policy_act("open", open_env_idx)
                 if torch.any(close_env_idx):
                     set_subtask_targ_policy_act("close", close_env_idx)
+                if torch.any(pick_and_place_env_idx):
+                    set_subtask_targ_policy_act("pick_and_place", pick_and_place_env_idx)
 
                 return action
 

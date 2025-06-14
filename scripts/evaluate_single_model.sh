@@ -6,14 +6,14 @@
 
 SEED=0
 
-ckpt_name="ppo-pick-all-local-20250424_010247"
-ckpt_root="mshab_exps/PickSubtaskTrain-v0/tidy_house-rcad-ppo-pick"
+ckpt_name="sac-002_master_chef_can-20250613_132311"
+ckpt_root="mshab_exps/PickAndPlaceSubtaskTrain-v0/tidy_house"
 ckpt_dir="$ckpt_root/$ckpt_name"
 
 TASK=tidy_house
-SUBTASK=pick # Dependent on ckpt
+SUBTASK=pick_and_place # Dependent on ckpt
 SPLIT=train
-OBJ=all
+OBJ=002_master_chef_can
 
 record_video=True
 info_on_video=False
@@ -73,10 +73,21 @@ if [[ $SUBTASK == "sequential" ]]; then
         # extra args
         extra_args=()
 else
-        
-        # env id
-        # shellcheck disable=SC2001
-        ENV_ID="$(echo $SUBTASK | sed 's/\b\(.\)/\u\1/g')SubtaskTrain-v0"
+        if [[ $SUBTASK == "pick_and_place" ]]; then
+                # env id
+                ENV_ID="PickAndPlaceSubtaskTrain-v0"
+                
+                # horizon
+                MAX_EPISODE_STEPS=600
+
+        else
+                # env id
+                # shellcheck disable=SC2001
+                ENV_ID="$(echo $SUBTASK | sed 's/\b\(.\)/\u\1/g')SubtaskTrain-v0"
+
+                # horizon
+                MAX_EPISODE_STEPS=200
+        fi
 
         # num envs
         if [[ $record_video == "True" ]]; then
@@ -89,9 +100,6 @@ else
                 NUM_ENVS=252
         fi
 
-        # horizon
-        MAX_EPISODE_STEPS=200
-
         # extra args
         # shellcheck disable=SC2089
         spawn_data_fp="$MS_ASSET_DIR/data/scene_datasets/replica_cad_dataset/rearrange/spawn_data/$TASK/$SUBTASK/$SPLIT/spawn_data.pt"
@@ -103,6 +111,8 @@ else
                 extra_stat_keys='<list>success, subtask_type, articulation_open, robot_target_pairwise_force, robot_force, robot_cumulative_force, handle_active_joint_qpos, handle_active_joint_qmax, handle_active_joint_qmin</list>'
         elif [[ $SUBTASK == "close" ]]; then
                 extra_stat_keys='<list>success, subtask_type, articulation_closed, robot_target_pairwise_force, robot_force, robot_cumulative_force, handle_active_joint_qpos, handle_active_joint_qmax, handle_active_joint_qmin</list>'
+        elif [[ $SUBTASK == "place" ]]; then
+                extra_stat_keys='<list>success, subtask_type, is_grasped, ever_grasped, obj_at_goal, robot_force, robot_cumulative_force</list>'
         fi
         extra_args+=(
                 "eval_env.spawn_data_fp=\"$spawn_data_fp\""
@@ -124,7 +134,7 @@ fi
 
 #############################################
 
-NUM_ENVS=8
+NUM_ENVS=1
 
 SAPIEN_NO_DISPLAY=1 python -m mshab.evaluate_single_model configs/evaluate.yml \
         seed=$SEED \

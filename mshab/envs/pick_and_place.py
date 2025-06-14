@@ -39,7 +39,7 @@ class PickAndPlaceSubtaskTrainEnv(SubtaskTrainEnv):
     """
 
     pick_and_place_cfg = PickAndPlaceSubtaskConfig(
-        horizon=200,
+        horizon=400,
         ee_rest_thresh=0.05,
         robot_cumulative_force_limit=12500,
         goal_type="sphere",
