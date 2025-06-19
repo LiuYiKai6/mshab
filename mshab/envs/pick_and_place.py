@@ -426,6 +426,7 @@ class PickAndPlaceSubtaskTrainEnv(SubtaskTrainEnv):
             goal_pos = self.subtask_goals[0].pose.p
             rest_pos = self.ee_rest_world_pose.p
             tcp_pos = self.agent.tcp_pose.p
+            base_pos = self.agent.base_link.pose.p
 
             # NOTE (yikailiu): reward "steps" are as follows:
             #       - if not grasped and not at goal
@@ -459,6 +460,14 @@ class PickAndPlaceSubtaskTrainEnv(SubtaskTrainEnv):
             ee_vel = self.agent.tcp.linear_velocity
             ee_still_rew = 1 - torch.tanh(torch.norm(ee_vel, dim=1) / 5)
             reward += ee_still_rew
+            
+            # encourage arm and torso in "resting" orientation
+            arm_to_resting_diff = torch.norm(
+                self.agent.robot.qpos[..., 3:-2] - self.resting_qpos,
+                dim=1,
+            )
+            arm_resting_orientation_rew = 1 - torch.tanh(arm_to_resting_diff / 5)
+            reward += arm_resting_orientation_rew
             
             # success reward
             success_rew = 6 * info["success"]
@@ -532,6 +541,16 @@ class PickAndPlaceSubtaskTrainEnv(SubtaskTrainEnv):
                 torso_not_moving_rew = 1 - torch.tanh(5 * torch.abs(tqvel_z))
                 grasped_and_not_at_goal_reward += torso_not_moving_rew
 
+                # base close to goal
+                base_to_goal_dist = torch.norm(
+                    base_pos[grasped_and_not_at_goal] - goal_pos[grasped_and_not_at_goal],
+                    dim=1
+                )
+                reaching_rew = 4 * (
+                    1 - torch.tanh(0.5 * torch.clamp(base_to_goal_dist, min=2) - 1)
+                )
+                grasped_and_not_at_goal_reward += reaching_rew
+                
                 # obj and tcp close to goal
                 obj_to_goal_dist = torch.norm(
                     obj_pos[grasped_and_not_at_goal] - goal_pos[grasped_and_not_at_goal],
@@ -565,7 +584,7 @@ class PickAndPlaceSubtaskTrainEnv(SubtaskTrainEnv):
                 
             if torch.any(obj_at_goal_maybe_dropped):
                 # add prev step max rew
-                obj_at_goal_maybe_dropped_reward += 20
+                obj_at_goal_maybe_dropped_reward += 24
 
                 # rest reward
                 tcp_to_rest_dist = torch.norm(
@@ -575,15 +594,9 @@ class PickAndPlaceSubtaskTrainEnv(SubtaskTrainEnv):
                 rest_rew = 5 * (1 - torch.tanh(3 * tcp_to_rest_dist))
                 obj_at_goal_maybe_dropped_reward += rest_rew
 
-                # additional encourage arm and torso in "resting" orientation
-                arm_to_resting_diff = torch.norm(
-                    self.agent.robot.qpos[obj_at_goal_maybe_dropped, 3:-2]
-                    - self.resting_qpos,
-                    dim=1,
-                )
-                arm_resting_orientation_rew = 4 * (1 - torch.tanh(arm_to_resting_diff))
-                obj_at_goal_maybe_dropped_reward += arm_resting_orientation_rew
-
+                # arm_to_resting_diff_again
+                obj_at_goal_maybe_dropped_reward += 4 * arm_resting_orientation_rew[obj_at_goal_maybe_dropped]
+                
                 # additional torso orientation reward
                 torso_resting_orientation_reward = 2 * torch.abs(
                     (
